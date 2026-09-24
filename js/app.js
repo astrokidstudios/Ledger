@@ -8,11 +8,13 @@ import { renderSubscriptions } from './views/subscriptions.js';
 import { renderReceipts } from './views/receipts.js';
 import { renderPlan } from './views/plan.js';
 import { renderSettings } from './views/settings.js';
+import { renderTax } from './views/tax.js';
 
 const ROUTES = {
   dashboard: { label: 'Overview', icon: '◎', render: renderDashboard },
   transactions: { label: 'Money in & out', icon: '⇅', render: renderTransactions },
   plan: { label: 'Goals & budget', icon: '◆', render: renderPlan },
+  tax: { label: 'Tax', icon: '§', render: renderTax },
   subscriptions: { label: 'Subscriptions', icon: '↻', render: renderSubscriptions },
   receipts: { label: 'Receipts', icon: '▤', render: renderReceipts },
   accounts: { label: 'Accounts', icon: '▣', render: renderAccounts },
@@ -136,7 +138,7 @@ function renderShell() {
       </header>
       <main id="view"></main>
     </div>
-    <nav class="bottom">${Object.entries(ROUTES).filter(([k]) => k !== 'settings' && k !== 'accounts').map(([k, r]) => `<a href="#/${k}" data-r="${k}"><span class="ic">${r.icon}</span><span>${r.label.split(' ')[0]}</span></a>`).join('')}<a href="#/settings" data-r="settings"><span class="ic">⋯</span><span>More</span></a></nav>
+    <nav class="bottom">${Object.entries(ROUTES).filter(([k]) => !['settings', 'accounts', 'receipts'].includes(k)).map(([k, r]) => `<a href="#/${k}" data-r="${k}"><span class="ic">${r.icon}</span><span>${r.label.split(' ')[0]}</span></a>`).join('')}<a href="#/settings" data-r="settings"><span class="ic">⋯</span><span>More</span></a></nav>
   </div>`;
   $('.signout').onclick = signOut;
   $('#inbox-btn').onclick = () => openInbox();

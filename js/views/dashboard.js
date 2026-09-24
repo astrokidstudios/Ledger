@@ -135,7 +135,7 @@ export async function renderDashboard(view) {
     ${bizIds.length && state.scope !== 'personal' ? `<section class="card">
       <h3>Business, ${cur.start.slice(0, 4)} so far</h3>
       <div class="row between li"><span>Deductible expenses recorded</span><strong>${money(deductible)}</strong></div>
-      <p class="muted small">Tax, ZUS and VAT estimates will be added in the next stage.</p>
+      <a href="#/tax" class="small">Tax, ZUS, VAT and deadlines →</a>
     </section>` : ''}
   </div>`;
 
