@@ -162,7 +162,7 @@ export async function renderTax(view) {
 
   const rerender = () => renderTax(view);
   $('#tax-year').onchange = (e) => { year = Number(e.target.value); cmp = null; rerender(); };
-  $('#tax-currency button').forEach((b) => { b.onclick = () => { displayCurrency = b.dataset.c; rerender(); }; });
+  $$('#tax-currency button').forEach((b) => { b.onclick = () => { displayCurrency = b.dataset.c; rerender(); }; });
   $('#tax-settings').onclick = () => editTax(rerender);
   const su = $('#setup'); if (su) su.onclick = () => editTax(rerender);
   const tc = $('#to-cat'); if (tc) tc.onclick = () => openInbox();
