@@ -36,8 +36,8 @@ export async function renderTax(view) {
   for (const x of txns) {
     const m = months[Number(x.txn_date.slice(5, 7)) - 1];
     const c = catById(x.category_id);
-    const amt = tomoney(x.amount, x.currency);
-    const vat = t.vat_registered && x.vat_amount ? Math.abs(tomoney(x.vat_amount, x.currency)) : 0;
+    const amt = toPLN(x.amount, x.currency);
+    const vat = t.vat_registered && x.vat_amount ? Math.abs(toPLN(x.vat_amount, x.currency)) : 0;
     if (!c) { uncategorised++; continue; }
     if (c.kind === 'income') { m.revenue += amt - Math.sign(amt) * vat; m.vatOut += Math.sign(amt) * vat; } else if (c.kind === 'expense' && c.cat_group !== 'tax') {
       const net = -amt - Math.sign(-amt) * vat;
@@ -64,7 +64,7 @@ export async function renderTax(view) {
   const boardYTD = sum('board');
   const boardTax = boardYTD > 0 ? boardYTD * (R.pit.healthOnBoardPay + R.pit.low) : 0; // rough accrual
   const owed = citSoFar + Math.max(0, vatNet) + zusSoFar;
-  const paid = allTax.filter((x) => catById(x.category_id)?.cat_group === 'tax').reduce((s, x) => s - tomoney(x.amount, x.currency), 0);
+  const paid = allTax.filter((x) => catById(x.category_id)?.cat_group === 'tax').reduce((s, x) => s - toPLN(x.amount, x.currency), 0);
   const afterCit = Math.max(0, profit - citSoFar);
   const cashLeft = afterCit - nonDed;
 
