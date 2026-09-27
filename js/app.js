@@ -1,7 +1,7 @@
 import { sb, state, loadCore, countUncategorised } from './db.js';
 import { $, $$, esc, toast, opt } from './util.js';
 import { renderDashboard } from './views/dashboard.js';
-import { renderTransactions } from './views/transactions.js';
+import { renderTransactions } from './views/transactions.js?v=pdf-import-20260927';
 import { openInbox } from './views/inbox.js';
 import { renderAccounts } from './views/accounts.js';
 import { renderSubscriptions } from './views/subscriptions.js';

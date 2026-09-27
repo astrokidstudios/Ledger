@@ -21,7 +21,7 @@ export async function renderTransactions(view) {
     <h1>Money in & out</h1>
     <div class="row">
       <button class="btn" id="add">+ Add</button>
-      <button class="btn primary" id="import">Import statement</button>
+      <button class="btn primary" id="import">Import PDF/CSV</button>
     </div>
   </div>
   <div class="filters card">
@@ -134,7 +134,7 @@ function openImport(done) {
   const accs = state.accounts.filter((a) => !a.archived && ['current', 'savings', 'credit'].includes(a.account_type));
   if (!accs.length) { toast('Add a current or savings account first', 'bad'); return; }
   let rows = null; let map = null; let fileName = ''; let pdf = null;
-  const m = modal(`<h2>Import bank statement</h2>
+  const m = modal(`<h2>Import PDF or CSV statement</h2>
     <p class="muted small">Choose a PDF statement or a CSV export from your bank. Only the date, description and amount are kept, never account numbers or addresses. Re-importing the same statement won't create duplicates.</p>
     <label>Which account is this from?<select id="imp-acc">${accs.map((a) => opt(a.id, `${a.name} (${a.currency})`, state.accountId === a.id)).join('')}</select></label>
     <label class="drop">Choose PDF or CSV file<input type="file" id="imp-file" accept=".pdf,application/pdf,.csv,text/csv,.txt"></label>
