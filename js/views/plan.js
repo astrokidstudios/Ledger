@@ -36,7 +36,7 @@ export async function renderPlan(view) {
       <div class="eq"><span class="muted small">= For lifestyle spending</span><strong class="${plan.discretionary < 0 ? 'neg' : ''}">${money(plan.discretionary)}</strong></div>
     </div>
     ${plan.discretionary < 0 ? '<p class="warn">⚠ Your goals and fixed costs are more than your income. Push a goal date back, lower a target, or trim essentials.</p>' : ''}
-    ${!plan.hasHistory ? '<p class="muted small">No spending history yet, so essentials are counted as £0. Import a few months of bank CSVs (or set budgets below) for a realistic plan.</p>' : ''}
+    ${!plan.hasHistory ? '<p class="muted small">No spending history yet, so essentials are counted as £0. Import a few months of bank statements (or set budgets below) for a realistic plan.</p>' : ''}
   </section>
 
   <section class="card">

@@ -162,6 +162,8 @@ select[multiple] { min-height: auto; }
 .pdf { font-weight: 700; color: var(--bad); }
 .rc-meta { padding: .6rem .8rem; display: grid; gap: .2rem; font-size: .9rem; }
 .drop { display: grid; gap: .4rem; padding: 1rem; border: 2px dashed var(--line); border-radius: 10px; margin: .8rem 0; cursor: pointer; }
+.tbl-wrap { overflow-x: auto; margin: 0 -.25rem; }
+.drop input[type=file] { width: 100%; min-width: 0; }
 .map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; margin: .8rem 0; }
 
 /* inbox */

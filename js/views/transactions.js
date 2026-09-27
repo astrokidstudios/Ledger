@@ -1,6 +1,7 @@
 import { sb, state, fetchTxns, visibleAccountIds, catById, accById, learnRule, autoCategory, currentPeriod, startDay, loadCore } from '../db.js';
 import { esc, fmt, niceDate, opt, toast, modal, confirmBox, download, toCSV, sha256, today, shiftPeriod, periodLabel, payeeKey, $, $$ } from '../util.js';
 import { readFileText, parseRows, detectMapping, applyMapping } from '../csv.js';
+import { hintCategory } from '../hints.js';
 import { categoryOptions } from './inbox.js';
 import { refreshInboxCount } from '../app.js';
 
@@ -20,7 +21,7 @@ export async function renderTransactions(view) {
     <h1>Money in & out</h1>
     <div class="row">
       <button class="btn" id="add">+ Add</button>
-      <button class="btn primary" id="import">Import bank CSV</button>
+      <button class="btn primary" id="import">Import statement</button>
     </div>
   </div>
   <div class="filters card">
@@ -44,7 +45,7 @@ export async function renderTransactions(view) {
       <td class="r nowrap ${Number(t.amount) >= 0 ? 'pos' : ''}">${fmt(t.amount, t.currency, { sign: true })}</td>
       <td><button class="icon-btn" data-edit="${t.id}" aria-label="Edit">✎</button></td>
     </tr>`).join('')}</tbody></table>`
-    : `<div class="empty"><p>No transactions here yet.</p>${state.accounts.length ? '<p class="muted">Import a CSV from your bank to get started.</p>' : '<a class="btn" href="#/accounts">Add an account first</a>'}</div>`}
+    : `<div class="empty"><p>No transactions here yet.</p>${state.accounts.length ? '<p class="muted">Import a PDF statement or CSV from your bank to get started.</p>' : '<a class="btn" href="#/accounts">Add an account first</a>'}</div>`}
   </div>`;
 
   const rerender = () => renderTransactions(view);
@@ -121,27 +122,78 @@ function editTxn(t, done) {
   };
 }
 
-// ---------------- CSV import ----------------
+// ---------------- statement import (CSV or PDF) ----------------
+function guess(r, acc) {
+  const a = autoCategory(r.description); // a rule you've taught Ledger always wins
+  if (a.categoryId) return { ...a, how: 'learned' };
+  const h = hintCategory(r, acc, state.categories);
+  return { key: a.key, categoryId: h?.id || null, how: h ? 'guess' : null };
+}
+
 function openImport(done) {
   const accs = state.accounts.filter((a) => !a.archived && ['current', 'savings', 'credit'].includes(a.account_type));
   if (!accs.length) { toast('Add a current or savings account first', 'bad'); return; }
-  let rows = null; let map = null; let fileName = '';
-  const m = modal(`<h2>Import bank CSV</h2>
-    <p class="muted small">Download a CSV (or "spreadsheet") export from your bank's app or website, then choose it here. Only the date, description and amount are kept. Account numbers in the file are ignored. Re-importing the same file won't create duplicates.</p>
+  let rows = null; let map = null; let fileName = ''; let pdf = null;
+  const m = modal(`<h2>Import bank statement</h2>
+    <p class="muted small">Choose a PDF statement or a CSV export from your bank. Only the date, description and amount are kept, never account numbers or addresses. Re-importing the same statement won't create duplicates.</p>
     <label>Which account is this from?<select id="imp-acc">${accs.map((a) => opt(a.id, `${a.name} (${a.currency})`, state.accountId === a.id)).join('')}</select></label>
-    <label class="drop">Choose CSV file<input type="file" id="imp-file" accept=".csv,text/csv,.txt"></label>
+    <label class="drop">Choose PDF or CSV file<input type="file" id="imp-file" accept=".pdf,application/pdf,.csv,text/csv,.txt"></label>
     <div id="imp-map"></div>`, { wide: true });
 
   const accSel = $('#imp-acc', m.el);
   $('#imp-file', m.el).onchange = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     fileName = file.name;
+    const box = $('#imp-map', m.el);
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      box.innerHTML = '<div class="loading">Reading statement…</div>';
+      try {
+        const { readPdfStatement } = await import('../pdf-import.js');
+        pdf = await readPdfStatement(file, accById(accSel.value).currency);
+      } catch (err) {
+        console.error(err);
+        box.innerHTML = `<p class="err">Couldn't read that PDF (${esc(err.message)}). If it's a scanned image rather than a downloaded statement, export a CSV from your bank instead.</p>`;
+        return;
+      }
+      rows = null; drawPdf(); return;
+    }
+    pdf = null;
     rows = parseRows(await readFileText(file));
     const saved = accById(accSel.value)?.csv_mapping;
     const detected = detectMapping(rows);
     map = saved && rows[saved.headerRow] && saved.date && rows[saved.headerRow].includes(saved.date) ? saved : detected;
     drawMapping();
   };
+
+  const previewTable = (parsed, acc, limit) => `
+    <div class="tbl-wrap"><table class="tbl compact"><thead><tr><th>Date</th><th>Description</th><th class="r">Amount</th><th>Sorted as</th></tr></thead><tbody>
+    ${parsed.slice(0, limit).map((r) => { const g = guess(r, acc); return `<tr><td class="nowrap">${niceDate(r.date)}</td><td>${esc(r.description)}${r.notes ? `<div class="muted small">${esc(r.notes)}</div>` : ''}</td><td class="r nowrap ${r.amount > 0 ? 'pos' : ''}">${fmt(r.amount, r.currency, { sign: true })}</td><td class="${g.categoryId ? '' : 'muted'}">${g.categoryId ? `${esc(catById(g.categoryId)?.name)}${g.how === 'guess' ? ' <span class="auto">suggested</span>' : ''}` : 'you choose'}</td></tr>`; }).join('')}
+    </tbody></table></div>${parsed.length > limit ? `<p class="muted small">…and ${parsed.length - limit} more.</p>` : ''}`;
+
+  function drawPdf() {
+    const acc = accById(accSel.value);
+    const { rows: parsed, meta, check, currency } = pdf;
+    const box = $('#imp-map', m.el);
+    if (!parsed.length) {
+      box.innerHTML = '<p class="err">No transactions found in this PDF. It may be a layout Ledger doesn\'t recognise yet, or a scanned image. A CSV export from the same bank will work.</p>';
+      return;
+    }
+    const inN = parsed.filter((r) => r.amount > 0); const outN = parsed.filter((r) => r.amount < 0);
+    const sorted = parsed.filter((r) => guess(r, acc).categoryId).length;
+    box.innerHTML = `
+      ${currency !== acc.currency ? `<p class="warn">This statement is in ${esc(currency)} but “${esc(acc.name)}” is a ${esc(acc.currency)} account. Check you picked the right account.</p>` : ''}
+      <div class="flow">
+        ${meta.from ? `<div><span class="muted small">Statement</span><strong>${niceDate(meta.from)} – ${niceDate(meta.to)}</strong></div>` : ''}
+        <div><span class="muted small">Money in (${inN.length})</span><strong class="pos">${fmt(check.inSum, currency)}</strong></div>
+        <div><span class="muted small">Money out (${outN.length})</span><strong>${fmt(check.outSum, currency)}</strong></div>
+        <div class="eq"><span class="muted small">Sorted automatically</span><strong>${sorted} of ${parsed.length}</strong></div>
+      </div>
+      ${check.checks.length ? `<p class="small">${check.ok ? '<span class="tag good">✓ Matches the statement</span> ' : '<span class="tag bad">Doesn\'t add up</span> '}${check.checks.map((c) => `${c.ok ? '✓' : '✗'} ${esc(c.label)}${!c.ok && c.expected != null ? ` (found ${fmt(c.found, currency)}, statement says ${fmt(c.expected, currency)})` : ''}${!c.ok && c.breaks ? ` (${c.breaks} gap${c.breaks > 1 ? 's' : ''})` : ''}`).join(' · ')}</p>` : ''}
+      ${!check.ok && check.checks.length ? '<p class="warn small">Some lines may have been missed or misread. You can still import and fix them afterwards, or use a CSV export for this month.</p>' : ''}
+      ${previewTable(parsed, acc, 12)}
+      <div class="row end"><button class="btn primary" id="imp-go">Import ${parsed.length} transactions</button></div>`;
+    $('#imp-go', m.el).onclick = () => runImport(acc, parsed);
+  }
 
   function drawMapping() {
     const headers = rows[map.headerRow] || [];
@@ -162,9 +214,7 @@ function openImport(done) {
         <label class="check"><input type="checkbox" id="m-inv" ${map.invert ? 'checked' : ''}> Flip signs (if spending shows as positive)</label>
       </div></details>
       <h3>${parsed.length} transactions found${skipped.length ? ` <span class="muted small">(${skipped.length} rows skipped, e.g. blank or summary lines)</span>` : ''}</h3>
-      <table class="tbl compact"><thead><tr><th>Date</th><th>Description</th><th class="r">Amount</th><th>Will be sorted as</th></tr></thead><tbody>
-      ${parsed.slice(0, 8).map((r) => { const a = autoCategory(r.description); return `<tr><td class="nowrap">${niceDate(r.date)}</td><td>${esc(r.description)}</td><td class="r nowrap">${fmt(r.amount, r.currency, { sign: true })}</td><td class="muted">${a.categoryId ? esc(catById(a.categoryId)?.name) : 'you choose'}</td></tr>`; }).join('')}
-      </tbody></table>
+      ${previewTable(parsed, acc, 8)}
       <div class="row end"><button class="btn primary" id="imp-go" ${parsed.length ? '' : 'disabled'}>Import ${parsed.length} transactions</button></div>`;
 
     const bind = (id, fn) => { $(id, m.el).onchange = (e) => { fn(e.target); drawMapping(); }; };
@@ -179,22 +229,32 @@ function openImport(done) {
     bind('#m-inv', (el) => { map.invert = el.checked; });
     $('#imp-go', m.el).onclick = () => runImport(acc, parsed);
   }
-  accSel.onchange = () => { if (rows) drawMapping(); };
+  accSel.onchange = () => { if (pdf) drawPdf(); else if (rows) drawMapping(); };
 
   async function runImport(acc, parsed) {
     const btn = $('#imp-go', m.el); btn.disabled = true; btn.textContent = 'Importing…';
     try {
-      const { data: imp, error: e1 } = await sb.from('imports').insert({ account_id: acc.id, file_name: fileName, row_count: parsed.length }).select().single();
+      // Payments already in this account (e.g. imported earlier from a CSV)
+      // are matched on date + amount and skipped, so PDF and CSV don't double up.
+      const dates = parsed.map((r) => r.date).sort();
+      const existing = await fetchTxns({ from: dates[0], to: dates[dates.length - 1], accountIds: [acc.id] });
+      const have = {};
+      for (const t of existing) { const k = `${t.txn_date}|${Math.round(Number(t.amount) * 100)}`; have[k] = (have[k] || 0) + 1; }
+      const fresh = parsed.filter((r) => { const k = `${r.date}|${Math.round(r.amount * 100)}`; if (have[k] > 0) { have[k]--; return false; } return true; });
+      const already = parsed.length - fresh.length;
+      if (!fresh.length) { m.close(); toast(`All ${parsed.length} transactions are already in ${acc.name}.`); return; }
+
+      const { data: imp, error: e1 } = await sb.from('imports').insert({ account_id: acc.id, file_name: fileName, row_count: fresh.length }).select().single();
       if (e1) throw e1;
       const seen = {};
       const out = [];
-      for (const r of parsed) {
+      for (const r of fresh) {
         const base = `${acc.id}|${r.date}|${r.amount}|${r.description}`;
         seen[base] = (seen[base] || 0) + 1; // identical rows on the same day stay distinct
-        const a = autoCategory(r.description);
+        const g = guess(r, acc);
         out.push({
           account_id: acc.id, txn_date: r.date, description: r.description, amount: r.amount, currency: r.currency,
-          payee_key: a.key, category_id: a.categoryId, auto_categorised: !!a.categoryId, import_id: imp.id,
+          notes: r.notes || null, payee_key: g.key, category_id: g.categoryId, auto_categorised: !!g.categoryId, import_id: imp.id,
           dedupe_hash: await sha256(`${base}|${seen[base]}`),
         });
       }
@@ -204,11 +264,12 @@ function openImport(done) {
         if (error) throw error;
         added += data.length;
       }
-      await sb.from('bank_accounts').update({ csv_mapping: map }).eq('id', acc.id);
+      if (map && !pdf) await sb.from('bank_accounts').update({ csv_mapping: map }).eq('id', acc.id);
       await loadCore();
       const auto = out.filter((o) => o.category_id).length;
+      const skippedDupes = already + (out.length - added);
       m.close();
-      toast(`Imported ${added} new transaction${added === 1 ? '' : 's'}${out.length - added ? ` (${out.length - added} already here)` : ''}. ${auto} sorted automatically.`);
+      toast(`Imported ${added} new transaction${added === 1 ? '' : 's'}${skippedDupes ? ` (${skippedDupes} already here)` : ''}. ${auto} sorted automatically.`);
       refreshInboxCount();
       done();
       if (out.length - auto > 0) (await import('./inbox.js')).openInbox();
